@@ -71,6 +71,13 @@ locationInArray:		.word 0
 fruitPositionX: .word
 fruitPositionY: .word
 
+# Warp-portal coordinates & color
+portalAX:    .word 5        # X of Portal A
+portalAY:    .word 10       # Y of Portal A
+portalBX:    .word 58       # X of Portal B
+portalBY:    .word 53       # Y of Portal B
+portalColor: .word 0x0000FF # Bright blue for portals
+
 .text
 
 main:
@@ -135,6 +142,9 @@ ClearRegisters:
 	li $s3, 0
 	li $s4, 0		
 
+
+
+
 ######################################################
 # Draw Border
 ######################################################
@@ -187,6 +197,30 @@ DrawBorder:
 	add $t1, $t1, 1	#increment X coordinate
 	
 	bne $t1, 64, BottomLoop	# loop through to draw entire bottom border
+		
+######################################################
+# Draw Portal
+######################################################
+DrawPortals:
+    # Draw Portal A
+    lw   $t0, portalAX
+    lw   $t1, portalAY
+    move $a0, $t0
+    move $a1, $t1
+    jal  CoordinateToAddress
+    move $a0, $v0
+    lw   $a1, portalColor
+    jal  DrawPixel
+
+    # Draw Portal B
+    lw   $t0, portalBX
+    lw   $t1, portalBY
+    move $a0, $t0
+    move $a1, $t1
+    jal  CoordinateToAddress
+    move $a0, $v0
+    lw   $a1, portalColor
+    jal  DrawPixel
 	
 ######################################################
 # Draw Initial Snake Position
@@ -330,13 +364,6 @@ DrawUpLoop:
 	addiu $t1, $t1, -1
 	add $a0, $t0, $zero
 	add $a1, $t1, $zero
-	jal CoordinateToAddress
-	add $a0, $v0, $zero
-	lw $a1, snakeColor
-	jal DrawPixel
-
-	sw  $t1, snakeHeadY
-	j UpdateTailPosition #head updated, update tail
 	
 DrawDownLoop:
 	#check for collision before moving to next pixel
@@ -355,7 +382,8 @@ DrawDownLoop:
 	lw $a1, snakeColor
 	jal DrawPixel
 	
-	sw  $t1, snakeHeadY	
+	sw  $t1, snakeHeadY
+	jal  CheckPortals	
 	j UpdateTailPosition #head updated, update tail
 
 DrawLeftLoop:
@@ -375,7 +403,8 @@ DrawLeftLoop:
 	lw $a1, snakeColor
 	jal DrawPixel
 	
-	sw  $t0, snakeHeadX	
+	sw  $t0, snakeHeadX
+	jal  CheckPortals	
 	j UpdateTailPosition #head updated, update tail
 
 DrawRightLoop:
@@ -396,6 +425,7 @@ DrawRightLoop:
 	jal DrawPixel
 	
 	sw  $t0, snakeHeadX
+	jal  CheckPortals
 	j UpdateTailPosition #head updated, update tail
 
 ######################################################
@@ -846,7 +876,37 @@ YEqualFruit:
 	
 ExitCollisionCheck:
 	jr $ra
-	
+#################################################################
+# Portals Check
+##################################################################
+CheckPortals:
+    # get the just?stored head coords
+    lw   $t0, snakeHeadX
+    lw   $t1, snakeHeadY
+
+    # if (t0,t1) == Portal A  ? jump to B
+    lw   $t2, portalAX
+    lw   $t3, portalAY
+    bne  $t0, $t2, .checkB
+    bne  $t1, $t3, .checkB
+    lw   $t4, portalBX
+    lw   $t5, portalBY
+    sw   $t4, snakeHeadX
+    sw   $t5, snakeHeadY
+
+.checkB:
+    # if (t0,t1) == Portal B ? jump to A
+    lw   $t2, portalBX
+    lw   $t3, portalBY
+    bne  $t0, $t2, .donePortals
+    bne  $t1, $t3, .donePortals
+    lw   $t4, portalAX
+    lw   $t5, portalAY
+    sw   $t4, snakeHeadX
+    sw   $t5, snakeHeadY
+
+.donePortals:
+    jr   $ra
 ##################################################################
 # Check Snake Body Collision
 # $a0 - snakeHeadPositionX
