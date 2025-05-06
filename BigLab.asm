@@ -80,6 +80,8 @@ portalColor: .word 0x0000FF # Bright blue for portals
 snakeLength:           .word 8    # or whatever your current length is maintained as
 postTeleportCountdown: .word 0
 teleportedFlag:        .word 0
+tailTeleportX:   .word 0   # X coordinate where tail should reappear
+tailTeleportY:   .word 0   # Y coordinate where tail should reappear
 .text
 
 main:
@@ -442,69 +444,130 @@ DrawRightLoop:
 # Update Snake Tail Position
 ######################################################	
 DrawCurrentTail:
-    # draw the tail pixel at (snakeTailX, snakeTailY)
-    lw    $t0, snakeTailX        # t0 = X
-    lw    $t1, snakeTailY        # t1 = Y
+     # --- prologue: save return address
+    # ??? prologue: make room on the stack & save $ra
+    addiu $sp, $sp, -8
+    sw    $ra, 4($sp)
+    # (if you ever use s-registers here, save/restore them too)
+
+    # ??? draw the tail pixel
+    lw    $t0, snakeTailX
+    lw    $t1, snakeTailY
     move  $a0, $t0
     move  $a1, $t1
-    jal   CoordinateToAddress    # v0 = &pixel
+    jal   CoordinateToAddress   # overwrites $ra
     move  $a0, $v0
     lw    $a1, snakeColor
-    jal   DrawPixel
+    jal   DrawPixel             # overwrites $ra again
+
+    # ??? epilogue: restore $ra & tear down stack frame
+    lw    $ra, 4($sp)
+    addiu $sp, $sp, 8
     jr    $ra
 UpdateTailPosition:
+     # load the countdown
     lw   $t0, postTeleportCountdown
-    bnez $t0, PostTeleport
-    j    DoNormalTail
+    beqz $t0, DoNormalTail      # if zero, skip straight to normal tail moves
 
-PostTeleport:
+    # still in teleport cooldown
     addiu $t0, $t0, -1
     sw   $t0, postTeleportCountdown
-    bnez $t0, PauseTail   # still waiting? skip
 
-    # countdown just hit zero ‚Üí respawn & maybe clear
-RespawnTail:
-    # 1) Move the tail to the head‚Äôs new cell
-    lw   $t1, snakeHeadX
-    lw   $t2, snakeHeadY
-    sw   $t1, snakeTailX
-    sw   $t2, snakeTailY
-
-    # 2) Reset tailDirection = head‚Äôs direction
-    lw   $t3, direction
-    sw   $t3, tailDirection
-
-    # 3) Inject a new bend entry at this exit cell
-    #    so future tail‚Äêupdates will follow the new path
-    move $a0, $t1           # x
-    move $a1, $t2           # y
-    jal  CoordinateToAddress  # v0 = address of exit pixel
-
-    # store that address into directionChangeAddressArray[arrayPosition/4]
-    la   $t6, directionChangeAddressArray
-    lw   $t7, arrayPosition
-    add  $t6, $t6, $t7
-    sw   $v0, 0($t6)
-
-    # store current direction into newDirectionChangeArray[arrayPosition/4]
-    la   $t6, newDirectionChangeArray
-    lw   $t8, direction
-    add  $t6, $t6, $t7
-    sw   $t8, 0($t6)
-
-    # bump arrayPosition (wrap at 400 bytes)
-    addiu $t7, $t7, 4
-    li   $t9, 400
-    bne  $t7, $t9, NoWrap
-    li   $t7, 0
-    jal DrawCurrentTail
-    j DrawFruit
-NoWrap:
-    sw   $t7, arrayPosition
-
-    # 4) Draw the tail at the head‚Äôs exit, then return
+    beqz $t0, TeleportRespawn   # if that was the last frame, go snap the tail
+    # otherwise just draw the tail at its current spot & done
     jal  DrawCurrentTail
     j    DrawFruit
+TeleportRespawn:
+    # 0) Wipe out any old bends:
+    li    $t4, 0
+    sw    $t4, arrayPosition      # write-pointer ? 0
+    sw    $t4, locationInArray    #  read-pointer ? 0
+
+    # 1) Snap the tail to the portal-exit cell
+    lw    $t1, tailTeleportX
+    lw    $t2, tailTeleportY
+    sw    $t1, snakeTailX
+    sw    $t2, snakeTailY
+
+    # 2) Reset its direction
+    lw    $t3, direction
+    sw    $t3, tailDirection
+
+    # 3) Inject exactly one bend at array index 0
+    move  $a0, $t1
+    move  $a1, $t2
+    jal   CoordinateToAddress     # v0 = pixel address
+    # ó after jal CoordinateToAddress in TeleportRespawn, before DrawCurrentTail ó
+
+    # print arrayPosition
+    la   $t0, arrayPosition
+    lw   $a0, 0($t0)
+    li   $v0, 1          # syscall: print integer
+    syscall
+
+    # print newline
+    li   $v0, 11         # syscall: print character
+    li   $a0, 10         # ASCII newline
+    syscall
+
+    # print locationInArray
+    la   $t0, locationInArray
+    lw   $a0, 0($t0)
+    li   $v0, 1
+    syscall
+
+    # newline
+    li   $v0, 11
+    li   $a0, 10
+    syscall
+
+    # dump directionChangeAddressArray[0]
+    la   $t0, directionChangeAddressArray
+    lw   $a0, 0($t0)
+    li   $v0, 1
+    syscall
+
+    # newline
+    li   $v0, 11
+    li   $a0, 10
+    syscall
+
+    # dump newDirectionChangeArray[0]
+    la   $t0, newDirectionChangeArray
+    lw   $a0, 0($t0)
+    li   $v0, 1
+    syscall
+
+    # newline
+    li   $v0, 11
+    li   $a0, 10
+    syscall
+
+    # now continue
+    jal  DrawCurrentTail
+    j    DrawFruit
+
+    la    $t6, directionChangeAddressArray
+    sw    $v0, 0($t6)             # store at offset 0
+
+    la    $t6, newDirectionChangeArray
+    lw    $t7, direction
+    sw    $t7, 0($t6)
+
+    # 4) Bump write-pointer to the next slot (4)
+    addiu $t4, $t4, 4
+    sw    $t4, arrayPosition
+
+    # 5) Draw & continue
+    jal   DrawCurrentTail
+    j     DrawFruit
+.skipWrap:
+    sw   $t4, arrayPosition
+
+    # 6) Draw the tail at the exit and continue the loop
+    jal  DrawCurrentTail
+    j    DrawFruit
+
 DrawTailAtHead:
     # draw the tail pixel at the head‚Äôs cell
     lw   $t0, snakeTailX
@@ -518,15 +581,44 @@ DrawTailAtHead:
     j    DrawFruit
 
 PauseTail:
-    # still pausing: just draw tail where it is now
-    lw   $t0, snakeTailX
-    lw   $t1, snakeTailY
-    move $a0, $t0
-    move $a1, $t1
-    jal  CoordinateToAddress
-    move $a0, $v0
-    lw   $a1, snakeColor
-    jal  DrawPixel
+     # --- decrement the countdown
+    addiu $t0, $t0, -1
+    sw   $t0, postTeleportCountdown
+    bnez $t0, PauseTail     # still waiting? just draw the old tail
+
+    # --- countdown hit zero ? respawn tail at head exit
+    lw   $t1, snakeHeadX
+    lw   $t2, snakeHeadY
+    sw   $t1, snakeTailX
+    sw   $t2, snakeTailY
+
+    # reset tailís direction
+    lw   $t3, direction
+    sw   $t3, tailDirection
+
+    # record a new bend at the exit cell
+    move $a0, $t1
+    move $a1, $t2
+    jal  CoordinateToAddress   # v0 = pixel address
+    la   $t6, directionChangeAddressArray
+    lw   $t7, arrayPosition
+    add  $t6, $t6, $t7
+    sw   $v0, 0($t6)
+    la   $t6, newDirectionChangeArray
+    lw   $t8, direction
+    add  $t6, $t6, $t7
+    sw   $t8, 0($t6)
+
+    # bump & wrap the array index
+    addiu $t7, $t7, 4
+    li   $t9, 400
+    bne  $t7, $t9, SetArrayPos
+    li   $t7, 0
+SetArrayPos:
+    sw   $t7, arrayPosition
+
+    # draw the ìteleportedî tail and then go straight to DrawFruit
+    jal  DrawCurrentTail
     j    DrawFruit
 DoNormalTail:
     # Load the tail‚Äôs current direction and dispatch
@@ -996,6 +1088,8 @@ HitA:
     lw   $t1, portalBY
     sw   $t0, snakeHeadX
     sw   $t1, snakeHeadY
+    sw   $t0, tailTeleportX   # remember exit?cell for tail
+    sw   $t1, tailTeleportY
     # arm the countdown
     lw   $t4, snakeLength
     sw   $t4, postTeleportCountdown
@@ -1016,6 +1110,8 @@ HitB:
     lw   $t1, portalAY
     sw   $t0, snakeHeadX
     sw   $t1, snakeHeadY
+    sw   $t0, tailTeleportX   # remember exit?cell for tail
+    sw   $t1, tailTeleportY
     # arm the countdown
     lw   $t4, snakeLength
     sw   $t4, postTeleportCountdown
