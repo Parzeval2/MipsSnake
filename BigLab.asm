@@ -71,6 +71,17 @@ locationInArray:		.word 0
 fruitPositionX: .word
 fruitPositionY: .word
 
+# Warp-portal coordinates & color
+portalAX:    .word 5        # X of Portal A
+portalAY:    .word 10       # Y of Portal A
+portalBX:    .word 58       # X of Portal B
+portalBY:    .word 53       # Y of Portal B
+portalColor: .word 0x0000FF # Bright blue for portals
+snakeLength:           .word 8
+postTeleportCountdown: .word 0
+teleportedFlag:        .word 0
+tailTeleportX:   .word 0   # X coordinate where tail should reappear
+tailTeleportY:   .word 0   # Y coordinate where tail should reappear
 .text
 
 main:
@@ -135,6 +146,9 @@ ClearRegisters:
 	li $s3, 0
 	li $s4, 0		
 
+
+
+
 ######################################################
 # Draw Border
 ######################################################
@@ -187,6 +201,30 @@ DrawBorder:
 	add $t1, $t1, 1	#increment X coordinate
 	
 	bne $t1, 64, BottomLoop	# loop through to draw entire bottom border
+		
+######################################################
+# Draw Portal
+######################################################
+DrawPortals:
+    # Draw Portal A
+    lw   $t0, portalAX #load the x and y pos
+    lw   $t1, portalAY
+    move $a0, $t0 #move the values
+    move $a1, $t1
+    jal  CoordinateToAddress
+    move $a0, $v0 #draw the portal
+    lw   $a1, portalColor
+    jal  DrawPixel
+
+    # Draw Portal B
+    lw   $t0, portalBX #repeat part 1
+    lw   $t1, portalBY
+    move $a0, $t0
+    move $a1, $t1
+    jal  CoordinateToAddress
+    move $a0, $v0
+    lw   $a1, portalColor
+    jal  DrawPixel
 	
 ######################################################
 # Draw Initial Snake Position
@@ -334,9 +372,10 @@ DrawUpLoop:
 	add $a0, $v0, $zero
 	lw $a1, snakeColor
 	jal DrawPixel
-
+	
 	sw  $t1, snakeHeadY
-	j UpdateTailPosition #head updated, update tail
+	jal  CheckPortals #check the head vs portal	
+	jal UpdateTailPosition #head updated, update tail
 	
 DrawDownLoop:
 	#check for collision before moving to next pixel
@@ -355,8 +394,9 @@ DrawDownLoop:
 	lw $a1, snakeColor
 	jal DrawPixel
 	
-	sw  $t1, snakeHeadY	
-	j UpdateTailPosition #head updated, update tail
+	sw  $t1, snakeHeadY
+	jal  CheckPortals	#check the head vs portal
+	jal UpdateTailPosition #head updated, update tail
 
 DrawLeftLoop:
 	#check for collision before moving to next pixel
@@ -375,8 +415,9 @@ DrawLeftLoop:
 	lw $a1, snakeColor
 	jal DrawPixel
 	
-	sw  $t0, snakeHeadX	
-	j UpdateTailPosition #head updated, update tail
+	sw  $t0, snakeHeadX
+	jal  CheckPortals	#check the head vs portal
+	jal UpdateTailPosition #head updated, update tail
 
 DrawRightLoop:
 	#check for collision before moving to next pixel
@@ -396,20 +437,129 @@ DrawRightLoop:
 	jal DrawPixel
 	
 	sw  $t0, snakeHeadX
-	j UpdateTailPosition #head updated, update tail
+	jal  CheckPortals	#check the head vs portal
+	jal UpdateTailPosition #head updated, update tail
 
 ######################################################
 # Update Snake Tail Position
 ######################################################	
-			
-UpdateTailPosition:	
-	lw $t2, tailDirection
-	#branch based on which direction tail is moving
-	beq  $t2, 119, MoveTailUp
-	beq  $t2, 115, MoveTailDown
-	beq  $t2, 97, MoveTailLeft
-	beq  $t2, 100, MoveTailRight
+DrawCurrentTail:
+    #save our return address here
+    addiu $sp, $sp, -8
+    sw    $ra, 4($sp)
+    #draw the tail pixel
+    lw    $t0, snakeTailX
+    lw    $t1, snakeTailY
+    move  $a0, $t0
+    move  $a1, $t1
+    jal   CoordinateToAddress   # overwrites $ra
+    move  $a0, $v0
+    lw    $a1, snakeColor
+    jal   DrawPixel             # overwrites $ra again
 
+    #restore the return address
+    lw    $ra, 4($sp)
+    addiu $sp, $sp, 8
+    jr    $ra
+UpdateTailPosition:
+     # load the countdown
+    lw   $t0, postTeleportCountdown
+    beqz $t0, DoNormalTail      # if zero, skip straight to normal tail moves
+
+    # still in teleport cooldown
+    addiu $t0, $t0, -1
+    sw   $t0, postTeleportCountdown
+
+    beqz $t0, TeleportRespawn   # if that was the last frame, go snap the tail
+    # otherwise just draw the tail at its current spot & done
+    jal  DrawCurrentTail
+    j    DrawFruit
+TeleportRespawn:
+    #we are basically resetting the map
+    # clear the bend array
+    li    $t4, 0
+    sw    $t4, arrayPosition
+    sw    $t4, locationInArray
+
+    #bring our tail to the exit cell for the portal
+    lw    $t1, tailTeleportX
+    lw    $t2, tailTeleportY
+    sw    $t1, snakeTailX
+    sw    $t2, snakeTailY
+
+    #Reset its direction
+    lw    $t3, direction
+    sw    $t3, tailDirection
+
+    #make it bend 1 time at 0
+    move  $a0, $t1
+    move  $a1, $t2
+    jal   CoordinateToAddress     # v0 = pixel address
+#################################
+# I GENUINELY DONT KNOW WHY A PRINT STATEMENT FIXES PORTALS BUT WE NEED THIS DEBUG
+#################################
+    # print arrayPosition
+    la   $t0, arrayPosition
+    lw   $a0, 0($t0)
+    li   $v0, 1         
+    syscall
+
+    # print newline
+    li   $v0, 11         
+    li   $a0, 10         
+    syscall
+
+    # print locationInArray
+    la   $t0, locationInArray
+    lw   $a0, 0($t0)
+    li   $v0, 1
+    syscall
+
+    # newline
+    li   $v0, 11
+    li   $a0, 10
+    syscall
+
+    # dump directionChangeAddressArray[0]
+    la   $t0, directionChangeAddressArray
+    lw   $a0, 0($t0)
+    li   $v0, 1
+    syscall
+
+    # newline
+    li   $v0, 11
+    li   $a0, 10
+    syscall
+
+    # dump newDirectionChangeArray[0]
+    la   $t0, newDirectionChangeArray
+    lw   $a0, 0($t0)
+    li   $v0, 1
+    syscall
+
+    # newline
+    li   $v0, 11
+    li   $a0, 10
+    syscall
+
+    # now continue
+    jal  DrawCurrentTail
+    j    DrawFruit
+SetArrayPos:
+    sw   $t7, arrayPosition
+
+    # draw the “teleported” tail and then go straight to DrawFruit
+    jal  DrawCurrentTail
+    j    DrawFruit
+DoNormalTail:
+    # Load the tail's current direction and dispatch
+    lw   $t2, tailDirection
+    beq  $t2, 119, MoveTailUp
+    beq  $t2, 115, MoveTailDown
+    beq  $t2,  97, MoveTailLeft
+    beq  $t2, 100, MoveTailRight
+    j    DrawFruit    # fallback if something's wrong
+    
 MoveTailUp:
 	#get the screen coordinates of the next direction change
 	lw $t8, locationInArray
@@ -846,7 +996,56 @@ YEqualFruit:
 	
 ExitCollisionCheck:
 	jr $ra
-	
+################################################################################
+# CheckPortals
+################################################################################
+CheckPortals:
+    # load current head pos
+    lw   $t0, snakeHeadX       # t0 = old headX
+    lw   $t1, snakeHeadY       # t1 = old headY
+
+    lw   $t2, portalAX
+    lw   $t3, portalAY
+    bne  $t0, $t2, SkipA
+    bne  $t1, $t3, SkipA
+
+HitA:
+    # teleport head a -> b
+    lw   $t0, portalBX
+    lw   $t1, portalBY
+    sw   $t0, snakeHeadX
+    sw   $t1, snakeHeadY
+    sw   $t0, tailTeleportX   # remember exit?cell for tail
+    sw   $t1, tailTeleportY
+    # arm the countdown
+    lw   $t4, snakeLength
+    sw   $t4, postTeleportCountdown
+    li   $t5, 1
+    sw   $t5, teleportedFlag
+    jr   $ra
+
+SkipA:
+    lw   $t2, portalBX
+    lw   $t3, portalBY
+    bne  $t0, $t2, EndPortals
+    bne  $t1, $t3, EndPortals
+
+HitB:
+    # teleport head b -> a
+    lw   $t0, portalAX
+    lw   $t1, portalAY
+    sw   $t0, snakeHeadX
+    sw   $t1, snakeHeadY
+    sw   $t0, tailTeleportX   # remember exit cell for tail
+    sw   $t1, tailTeleportY
+    # arm the countdown
+    lw   $t4, snakeLength
+    sw   $t4, postTeleportCountdown
+    li   $t5, 1
+    sw   $t5, teleportedFlag
+
+EndPortals:
+    jr   $ra
 ##################################################################
 # Check Snake Body Collision
 # $a0 - snakeHeadPositionX
