@@ -10,3 +10,5 @@ Something Unexpected (15%):
 Music
 
 Something optimized (10%):
+- Changed instances of multiplication to bit shift left 
+- Swapped 'move' operations with 'addu'
