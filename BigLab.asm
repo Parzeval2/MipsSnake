@@ -279,9 +279,9 @@ SpawnFruit:
     addiu $a0, $a0, 1
     sw   $a0, fruitPositionY
 
-    #generate a random nnumber fom 0-2 for our generation
+    #generate a random nnumber fom 0-4 for our generation
     li   $v0, 42
-    li   $a1, 4         # upper bound = 3
+    li   $a1, 4         # upper bound = 4
     syscall
     sw   $a0, fruitType
 
@@ -467,7 +467,7 @@ ContinueTailUp:
 
 	
 IncreaseLengthUp:
-	li $s1, 0 #set flag back to false
+	#li $s1, 0 #set flag back to false
 	jal CoordinateToAddress
 	add $a0, $v0, $zero
 	bne $t9, $a0, DrawTailUp #change direction if needed
@@ -520,7 +520,7 @@ ContinueTailDown:
 
 	
 IncreaseLengthDown:
-	li $s1, 0 #set flag back to false
+	#li $s1, 0 #set flag back to false
 	jal CoordinateToAddress
 	add $a0, $v0, $zero
 	bne $t9, $a0, DrawTailDown #change direction if needed
@@ -626,7 +626,7 @@ ContinueTailRight:
 
 	
 IncreaseLengthRight:
-	li $s1, 0 #set flag back to false
+	#li $s1, 0 #set flag back to false
 	#get screen coordinates
 	jal CoordinateToAddress
 	#store coordinates in $a0
@@ -705,7 +705,18 @@ LoadMagenta:
 DoDraw:
     #draw the pixel
     jal  DrawPixel
+    # play sound to signify score update
+	li $v0, 31
+	li $a0, 76
+	li $a1, 120
+	li $a2, 7
+	li $a3, 128
+	syscall	
 
+	li $a0, 96
+	li $a1, 250
+	li $a2, 7
+	li $a3, 127
     # back to main loop
     j    InputCheck
 
@@ -1122,6 +1133,19 @@ IncreaseDifficulty:
 	addiu $t1, $t1, -25
 	#store new speed
 	sw $t1, gameSpeed
+	#noiseeeee
+	li $v0, 31
+	li $a0, 79
+	li $a1, 150
+	li $a2, 7
+	li $a3, 127
+	syscall	
+
+	li $a0, 96
+	li $a1, 250
+	li $a2, 7
+	li $a3, 127
+	syscall
 
 FinishedDiff:
 	jr $ra
