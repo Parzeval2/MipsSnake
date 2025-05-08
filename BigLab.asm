@@ -68,9 +68,9 @@ arrayPosition:			.word 0
 locationInArray:		.word 0
 
 #Fruit Information
+fruitType:      .word 0
 fruitPositionX: .word
 fruitPositionY: .word
-
 .text
 
 main:
@@ -260,22 +260,34 @@ DrawBorder:
 # Spawn Fruit
 ######################################################	
 SpawnFruit:
-	#syscall for random int with a upper bound
-	li $v0, 42
-	#upper bound 61 (0 <= $a0 < $a1)
-	li $a1, 62
-	syscall
-	#increment the X position so it doesnt draw on a border
-	addiu $a0, $a0, 1
-	#store X position
-	sw $a0, fruitPositionX
-	syscall
-	#increment the Y position so it doesnt draw on a border
-	addiu $a0, $a0, 1
-	#store Y position
-	sw $a0, fruitPositionY
-	jal IncreaseDifficulty
-	
+    # ── pick random X in [0..61], then +1 → [1..62] ───────────────────────
+    li   $v0, 42        # syscall: random integer
+    li   $a1, 62        # upper bound → 0..61
+    syscall             # result in $v0
+    addiu $a0, $a0, 1   # shift into 1..62
+    sw   $a0, fruitPositionX
+
+    # ── pick random Y in [0..61], then +1 → [1..62] ───────────────────────
+    li   $v0, 42
+    li   $a1, 62
+    syscall
+    addiu $a0, $a0, 1
+    sw   $a0, fruitPositionY
+
+    #── random fruitType ∈ {0,1,2} ─────────────────────────────────────────
+    li   $v0, 42
+    li   $a1, 2         # upper bound = 3 → $v0 ∈ {0,1,2}
+    syscall
+    sw   $a0, fruitType
+     # after sw $v0, fruitType
+    li   $v0, 1       # syscall: print integer
+    lw   $a0, fruitType
+    syscall
+    li   $v0, 11      # syscall: print character
+    li   $a0, 10      # newline
+    syscall
+
+    jal  IncreaseDifficulty
 ######################################################
 # Check for Direction Change
 ######################################################
@@ -601,26 +613,94 @@ DrawTailRight:
 # Draw Fruit
 ######################################################	
 DrawFruit:
-	#check collision with fruit
-	lw $a0, snakeHeadX
-	lw $a1, snakeHeadY
-	jal CheckFruitCollision
-	beq $v0, 1, AddLength #if fruit was eaten, add length
+    # 1) collision?
+    lw   $a0, snakeHeadX
+    lw   $a1, snakeHeadY
+    jal  CheckFruitCollision
+    beq  $v0, 1, AddLength
 
-	#draw the fruit
-	lw $a0, fruitPositionX
-	lw $a1, fruitPositionY
-	jal CoordinateToAddress
-	add $a0, $v0, $zero
-	lw $a1, fruitColor
-	jal DrawPixel
-	j InputCheck
-	
+    # 2) pixel address for fruit
+    lw   $a0, fruitPositionX
+    lw   $a1, fruitPositionY
+    jal  CoordinateToAddress
+    move $a0, $v0       # $a0 = &bitmap[x,y]
+
+    # 3) pick color by fruitType
+    lw   $t0, fruitType
+    li   $a1, 0xCC6611  # default (type 0)
+    beq  $t0, 1, LoadRed
+    beq  $t0, 2, LoadBlue
+    j    DoDraw
+
+LoadRed:
+    li   $a1, 0xFF0000
+    j    DoDraw
+
+LoadBlue:
+    li   $a1, 0x0000FF
+
+DoDraw:
+    # 4) draw
+    jal  DrawPixel
+
+    # back to main loop
+    j    InputCheck
+
 AddLength:
-	li $s1, 1 #flag to increase snake length
-	j SpawnFruit
+    lw   $t0, fruitType
+    beq  $t0, 1, ShrinkFruit
+    li   $s1, 1        # grow
+    j    SpawnFruit
 
-j InputCheck #shouldn't need, but there in case of errors
+ShrinkFruit:
+    jal  DoShrink
+    j    SpawnFruit
+
+DoShrink:
+      # � prologue if you�re using jal within here �
+    addiu $sp, $sp, -4
+    sw    $ra, 0($sp)
+
+    # 1) erase the old tail pixel
+    lw    $a0, snakeTailX
+    lw    $a1, snakeTailY
+    jal   CoordinateToAddress
+    move  $a0, $v0
+    lw    $a1, backgroundColor
+    jal   DrawPixel
+
+    # 2) advance snakeTailX/Y by one in tailDirection
+    lw    $t2, tailDirection
+    beq   $t2, 119, SUp       # 'w'
+    beq   $t2, 115, SDown     # 's'
+    beq   $t2, 97,  SLeft     # 'a'
+    # else 'd'
+SRight:
+    lw    $t0, snakeTailX
+    addiu $t0, $t0, 1
+    sw    $t0, snakeTailX
+    j     _EndShrinkMove
+SUp:
+    lw    $t0, snakeTailY
+    addiu $t0, $t0, -1
+    sw    $t0, snakeTailY
+    j     _EndShrinkMove
+SDown:
+    lw    $t0, snakeTailY
+    addiu $t0, $t0, 1
+    sw    $t0, snakeTailY
+    j     _EndShrinkMove
+SLeft:
+    lw    $t0, snakeTailX
+    addiu $t0, $t0, -1
+    sw    $t0, snakeTailX
+
+_EndShrinkMove:
+    # � epilogue �
+    lw    $ra, 0($sp)
+    addiu $sp, $sp, 4
+    jr    $ra
+    
 
 ##################################################################
 #CoordinatesToAddress Function
