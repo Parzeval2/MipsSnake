@@ -276,9 +276,16 @@ SpawnFruit:
 
     #── random fruitType ∈ {0,1,2} ─────────────────────────────────────────
     li   $v0, 42
-    li   $a0, 3         # upper bound = 3 → $v0 ∈ {0,1,2}
+    li   $a1, 2         # upper bound = 3 → $v0 ∈ {0,1,2}
     syscall
-    sw   $v0, fruitType
+    sw   $a0, fruitType
+     # after sw $v0, fruitType
+    li   $v0, 1       # syscall: print integer
+    lw   $a0, fruitType
+    syscall
+    li   $v0, 11      # syscall: print character
+    li   $a0, 10      # newline
+    syscall
 
     jal  IncreaseDifficulty
 ######################################################
@@ -641,7 +648,7 @@ DoDraw:
 
 AddLength:
     lw   $t0, fruitType
-    beq  $t0, $zero, ShrinkFruit
+    beq  $t0, 1, ShrinkFruit
     li   $s1, 1        # grow
     j    SpawnFruit
 
@@ -650,18 +657,49 @@ ShrinkFruit:
     j    SpawnFruit
 
 DoShrink:
-    lw   $t1, locationInArray
-    addiu $t1, $t1, 4
-    li   $t2, 396                 # 100 entries × 4 bytes
-    bgeu $t1, $t2, _shrink_wrap
-    j    _shrink_store
+      # � prologue if you�re using jal within here �
+    addiu $sp, $sp, -4
+    sw    $ra, 0($sp)
 
-_shrink_wrap:
-    subu $t1, $t1, $t2
+    # 1) erase the old tail pixel
+    lw    $a0, snakeTailX
+    lw    $a1, snakeTailY
+    jal   CoordinateToAddress
+    move  $a0, $v0
+    lw    $a1, backgroundColor
+    jal   DrawPixel
 
-_shrink_store:
-    sw   $t1, locationInArray
-    jr   $ra
+    # 2) advance snakeTailX/Y by one in tailDirection
+    lw    $t2, tailDirection
+    beq   $t2, 119, SUp       # 'w'
+    beq   $t2, 115, SDown     # 's'
+    beq   $t2, 97,  SLeft     # 'a'
+    # else 'd'
+SRight:
+    lw    $t0, snakeTailX
+    addiu $t0, $t0, 1
+    sw    $t0, snakeTailX
+    j     _EndShrinkMove
+SUp:
+    lw    $t0, snakeTailY
+    addiu $t0, $t0, -1
+    sw    $t0, snakeTailY
+    j     _EndShrinkMove
+SDown:
+    lw    $t0, snakeTailY
+    addiu $t0, $t0, 1
+    sw    $t0, snakeTailY
+    j     _EndShrinkMove
+SLeft:
+    lw    $t0, snakeTailX
+    addiu $t0, $t0, -1
+    sw    $t0, snakeTailX
+
+_EndShrinkMove:
+    # � epilogue �
+    lw    $ra, 0($sp)
+    addiu $sp, $sp, 4
+    jr    $ra
     
 
 ##################################################################
