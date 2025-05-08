@@ -80,7 +80,6 @@ main:
 	lw $a0, screenWidth
 	lw $a1, backgroundColor
 	mul $a2, $a0, $a0 #total number of pixels on screen
-	mul $a2, $a2, 4 #align addresses
 	sll $a2, $a2, 2 # align addresses, multiply by 4, Changed from mul to sll for preformance
 	add $a2, $a2, $gp #add base of gp
 	add $a0, $gp, $zero #loop counter
@@ -634,7 +633,6 @@ CoordinateToAddress:
 	lw $v0, screenWidth 	#Store screen width into $v0
 	mul $v0, $v0, $a1	#multiply by y position
 	add $v0, $v0, $a0	#add the x position
-	mul $v0, $v0, 4		#multiply by 4
 	sll $v0, $v0, 2		#multiply by 4, Changed from mul to sll for preformance
 	add $v0, $v0, $gp	#add global pointerfrom bitmap display
 	jr $ra			# return $v0
