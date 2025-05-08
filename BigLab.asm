@@ -68,9 +68,10 @@ arrayPosition:			.word 0
 locationInArray:		.word 0
 
 #Fruit Information
+fruitType:      .word 0
 fruitPositionX: .word
 fruitPositionY: .word
-
+fruitColors:    .word 0xcc6611, 0xff0000, 0x0000ff
 .text
 
 main:
@@ -260,22 +261,25 @@ DrawBorder:
 # Spawn Fruit
 ######################################################	
 SpawnFruit:
-	#syscall for random int with a upper bound
-	li $v0, 42
-	#upper bound 61 (0 <= $a0 < $a1)
-	li $a1, 62
-	syscall
-	#increment the X position so it doesnt draw on a border
-	addiu $a0, $a0, 1
-	#store X position
-	sw $a0, fruitPositionX
-	syscall
-	#increment the Y position so it doesnt draw on a border
-	addiu $a0, $a0, 1
-	#store Y position
-	sw $a0, fruitPositionY
-	jal IncreaseDifficulty
-	
+    # pick random X in [1..62)
+    li   $v0, 42
+    li   $a1, 62
+    syscall
+    addiu $a0, $a0, 1
+    sw   $a0, fruitPositionX
+
+    # pick random Y in [1..62)
+    syscall
+    addiu $a0, $a0, 1
+    sw   $a0, fruitPositionY
+
+    # pick a random fruitType ∈ {0,1,2}
+    li   $v0, 42
+    li   $a1, 3
+    syscall
+    sw   $v0, fruitType
+
+    jal  IncreaseDifficulty
 ######################################################
 # Check for Direction Change
 ######################################################
@@ -601,26 +605,55 @@ DrawTailRight:
 # Draw Fruit
 ######################################################	
 DrawFruit:
-	#check collision with fruit
-	lw $a0, snakeHeadX
-	lw $a1, snakeHeadY
-	jal CheckFruitCollision
-	beq $v0, 1, AddLength #if fruit was eaten, add length
+    # collision?
+    lw   $a0, snakeHeadX
+    lw   $a1, snakeHeadY
+    jal  CheckFruitCollision
+    beq  $v0, 1, AddLength
 
-	#draw the fruit
-	lw $a0, fruitPositionX
-	lw $a1, fruitPositionY
-	jal CoordinateToAddress
-	add $a0, $v0, $zero
-	lw $a1, fruitColor
-	jal DrawPixel
-	j InputCheck
-	
+    # draw fruit in its type-specific color
+    lw   $t0, fruitType
+    la   $t1, fruitColors
+    sll  $t2, $t0, 2
+    add  $t1, $t1, $t2
+    lw   $a1, 0($t1)
+
+    lw   $a0, fruitPositionX
+    lw   $a2, fruitPositionY
+    jal  CoordinateToAddress
+    move $a0, $v0
+    jal  DrawPixel
+
+    j    InputCheck
+
 AddLength:
-	li $s1, 1 #flag to increase snake length
-	j SpawnFruit
+    # if type 0 → shrink; else grow one segment (scoreGain left as-is)
+    lw   $t0, fruitType
+    beq  $t0, $zero, ShrinkFruit
 
+    li   $s1, 1        # grow one segment
+    j    SpawnFruit
+
+ShrinkFruit:
+    jal  DoShrink
+    j    SpawnFruit
 j InputCheck #shouldn't need, but there in case of errors
+
+
+DoShrink:
+    lw   $t1, locationInArray
+    addiu $t1, $t1, 4
+    li   $t2, 396                 # 100 entries × 4 bytes
+    bgeu $t1, $t2, _shrink_wrap
+    j    _shrink_store
+
+_shrink_wrap:
+    subu $t1, $t1, $t2
+
+_shrink_store:
+    sw   $t1, locationInArray
+    jr   $ra
+    
 
 ##################################################################
 #CoordinatesToAddress Function
