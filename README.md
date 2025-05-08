@@ -7,7 +7,7 @@ Small Change (15%): DONE
 -changed the color of the snake from blue to green
 
 Something Unexpected (15%):
-Music
+Noises when snake changed directions
 
 Something optimized (10%):
 - Changed instances of multiplication to bit shift left 
