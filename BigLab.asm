@@ -35,6 +35,8 @@ score: 		.word 0
 scoreGain:	.word 10
 #speed the snake moves at, increases as game progresses
 gameSpeed:	.word 200
+savedGameSpeed: .word 200
+speedBoostTimer: .word 0
 #array to store the scores in which difficulty should increase
 scoreMilestones: .word 100, 250, 500, 1000, 5000, 10000
 scoreArrayPosition: .word 0
@@ -260,32 +262,25 @@ DrawBorder:
 # Spawn Fruit
 ######################################################	
 SpawnFruit:
-    # ── pick random X in [0..61], then +1 → [1..62] ───────────────────────
-    li   $v0, 42        # syscall: random integer
-    li   $a1, 62        # upper bound → 0..61
-    syscall             # result in $v0
-    addiu $a0, $a0, 1   # shift into 1..62
+ 
+    li   $v0, 42        #randomly generating our fruit position
+    li   $a1, 62        
+    syscall             
+    addiu $a0, $a0, 1   #
     sw   $a0, fruitPositionX
 
-    # ── pick random Y in [0..61], then +1 → [1..62] ───────────────────────
+ 
     li   $v0, 42
     li   $a1, 62
     syscall
     addiu $a0, $a0, 1
     sw   $a0, fruitPositionY
 
-    #── random fruitType ∈ {0,1,2} ─────────────────────────────────────────
+    #generate a random nnumber fom 0-2 for our generation
     li   $v0, 42
-    li   $a1, 2         # upper bound = 3 → $v0 ∈ {0,1,2}
+    li   $a1, 3         # upper bound = 3
     syscall
     sw   $a0, fruitType
-     # after sw $v0, fruitType
-    li   $v0, 1       # syscall: print integer
-    lw   $a0, fruitType
-    syscall
-    li   $v0, 11      # syscall: print character
-    li   $a0, 10      # newline
-    syscall
 
     jal  IncreaseDifficulty
 ######################################################
@@ -293,6 +288,17 @@ SpawnFruit:
 ######################################################
 
 InputCheck:
+	#tldr just a regular input check but we do the speedboost
+	lw   $t0, speedBoostTimer
+    	beqz $t0, skipboost #see if we still have time on our speed
+    	addiu $t0, $t0, -1
+    	sw   $t0, speedBoostTimer
+    	bnez $t0, skipboost
+    	#when it just hit zero restore original speed
+    	lw   $t1, savedGameSpeed
+    	sw   $t1, gameSpeed
+    	
+skipboost: 	
 	lw $a0, gameSpeed
 	jal Pause
 
@@ -613,19 +619,19 @@ DrawTailRight:
 # Draw Fruit
 ######################################################	
 DrawFruit:
-    # 1) collision?
+    #collision?
     lw   $a0, snakeHeadX
     lw   $a1, snakeHeadY
     jal  CheckFruitCollision
-    beq  $v0, 1, AddLength
+    beq  $v0, 1, AddLength # add length is actually our handler here
 
-    # 2) pixel address for fruit
+    #pixel address for fruit
     lw   $a0, fruitPositionX
     lw   $a1, fruitPositionY
     jal  CoordinateToAddress
-    move $a0, $v0       # $a0 = &bitmap[x,y]
+    move $a0, $v0
 
-    # 3) pick color by fruitType
+    #pick color by fruitType
     lw   $t0, fruitType
     li   $a1, 0xCC6611  # default (type 0)
     beq  $t0, 1, LoadRed
@@ -640,28 +646,42 @@ LoadBlue:
     li   $a1, 0x0000FF
 
 DoDraw:
-    # 4) draw
+    #draw the pixel
     jal  DrawPixel
 
     # back to main loop
     j    InputCheck
 
 AddLength:
-    lw   $t0, fruitType
-    beq  $t0, 1, ShrinkFruit
-    li   $s1, 1        # grow
+    lw   $t0, fruitType #fruitType is randomly generated
+    beq  $t0, 1, ShrinkFruit#check
+    beq  $t0, 2, SpeedFruit#check
+    li   $s1, 1        # grow default
     j    SpawnFruit
 
 ShrinkFruit:
     jal  DoShrink
     j    SpawnFruit
 
+SpeedFruit:
+    lw $t2, gameSpeed# stash our speed
+    sw $t2, savedGameSpeed
+    
+    #make it faster
+    li $t3, 100
+    sw $t3, gameSpeed
+    
+    #set a 50 tick timer
+    li $t4, 50
+    sw $t4, speedBoostTimer
+    
+    j SpawnFruit
 DoShrink:
-      # � prologue if you�re using jal within here �
+      #stash our jump
     addiu $sp, $sp, -4
     sw    $ra, 0($sp)
 
-    # 1) erase the old tail pixel
+    #erase the old tail pixel
     lw    $a0, snakeTailX
     lw    $a1, snakeTailY
     jal   CoordinateToAddress
@@ -669,7 +689,7 @@ DoShrink:
     lw    $a1, backgroundColor
     jal   DrawPixel
 
-    # 2) advance snakeTailX/Y by one in tailDirection
+    #advance snakeTailX/Y by one in tailDirection
     lw    $t2, tailDirection
     beq   $t2, 119, SUp       # 'w'
     beq   $t2, 115, SDown     # 's'
@@ -679,24 +699,24 @@ SRight:
     lw    $t0, snakeTailX
     addiu $t0, $t0, 1
     sw    $t0, snakeTailX
-    j     _EndShrinkMove
+    j     EndShrinkMove
 SUp:
     lw    $t0, snakeTailY
     addiu $t0, $t0, -1
     sw    $t0, snakeTailY
-    j     _EndShrinkMove
+    j     EndShrinkMove
 SDown:
     lw    $t0, snakeTailY
     addiu $t0, $t0, 1
     sw    $t0, snakeTailY
-    j     _EndShrinkMove
+    j     EndShrinkMove
 SLeft:
     lw    $t0, snakeTailX
     addiu $t0, $t0, -1
     sw    $t0, snakeTailX
 
-_EndShrinkMove:
-    # � epilogue �
+EndShrinkMove:
+    #grab our jump back
     lw    $ra, 0($sp)
     addiu $sp, $sp, 4
     jr    $ra
