@@ -71,7 +71,6 @@ locationInArray:		.word 0
 fruitType:      .word 0
 fruitPositionX: .word
 fruitPositionY: .word
-fruitColors:    .word 0xcc6611, 0xff0000, 0x0000ff
 .text
 
 main:
@@ -261,21 +260,23 @@ DrawBorder:
 # Spawn Fruit
 ######################################################	
 SpawnFruit:
-    # pick random X in [1..62)
+    # ── pick random X in [0..61], then +1 → [1..62] ───────────────────────
+    li   $v0, 42        # syscall: random integer
+    li   $a1, 62        # upper bound → 0..61
+    syscall             # result in $v0
+    addiu $a0, $a0, 1   # shift into 1..62
+    sw   $a0, fruitPositionX
+
+    # ── pick random Y in [0..61], then +1 → [1..62] ───────────────────────
     li   $v0, 42
     li   $a1, 62
     syscall
     addiu $a0, $a0, 1
-    sw   $a0, fruitPositionX
-
-    # pick random Y in [1..62)
-    syscall
-    addiu $a0, $a0, 1
     sw   $a0, fruitPositionY
 
-    # pick a random fruitType ∈ {0,1,2}
+    #── random fruitType ∈ {0,1,2} ─────────────────────────────────────────
     li   $v0, 42
-    li   $a1, 3
+    li   $a0, 3         # upper bound = 3 → $v0 ∈ {0,1,2}
     syscall
     sw   $v0, fruitType
 
@@ -605,40 +606,48 @@ DrawTailRight:
 # Draw Fruit
 ######################################################	
 DrawFruit:
-    # collision?
+    # 1) collision?
     lw   $a0, snakeHeadX
     lw   $a1, snakeHeadY
     jal  CheckFruitCollision
     beq  $v0, 1, AddLength
 
-    # draw fruit in its type-specific color
-    lw   $t0, fruitType
-    la   $t1, fruitColors
-    sll  $t2, $t0, 2
-    add  $t1, $t1, $t2
-    lw   $a1, 0($t1)
-
+    # 2) pixel address for fruit
     lw   $a0, fruitPositionX
-    lw   $a2, fruitPositionY
+    lw   $a1, fruitPositionY
     jal  CoordinateToAddress
-    move $a0, $v0
+    move $a0, $v0       # $a0 = &bitmap[x,y]
+
+    # 3) pick color by fruitType
+    lw   $t0, fruitType
+    li   $a1, 0xCC6611  # default (type 0)
+    beq  $t0, 1, LoadRed
+    beq  $t0, 2, LoadBlue
+    j    DoDraw
+
+LoadRed:
+    li   $a1, 0xFF0000
+    j    DoDraw
+
+LoadBlue:
+    li   $a1, 0x0000FF
+
+DoDraw:
+    # 4) draw
     jal  DrawPixel
 
+    # back to main loop
     j    InputCheck
 
 AddLength:
-    # if type 0 → shrink; else grow one segment (scoreGain left as-is)
     lw   $t0, fruitType
     beq  $t0, $zero, ShrinkFruit
-
-    li   $s1, 1        # grow one segment
+    li   $s1, 1        # grow
     j    SpawnFruit
 
 ShrinkFruit:
     jal  DoShrink
     j    SpawnFruit
-j InputCheck #shouldn't need, but there in case of errors
-
 
 DoShrink:
     lw   $t1, locationInArray
