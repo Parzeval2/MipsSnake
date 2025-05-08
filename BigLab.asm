@@ -648,6 +648,19 @@ LoadBlue:
 DoDraw:
     #draw the pixel
     jal  DrawPixel
+	# play sound to signify score update
+	li $v0, 31
+	li $a0, 76
+	li $a1, 120
+	li $a2, 7
+	li $a3, 128
+	syscall	
+
+	li $a0, 96
+	li $a1, 250
+	li $a2, 7
+	li $a3, 127
+	syscall
 
     # back to main loop
     j    InputCheck
@@ -1060,6 +1073,20 @@ IncreaseDifficulty:
 	addiu $t1, $t1, -25
 	#store new speed
 	sw $t1, gameSpeed
+	
+	#noiseeeee
+	li $v0, 31
+	li $a0, 79
+	li $a1, 150
+	li $a2, 7
+	li $a3, 127
+	syscall	
+
+	li $a0, 96
+	li $a1, 250
+	li $a2, 7
+	li $a3, 127
+	syscall
 
 FinishedDiff:
 	jr $ra
