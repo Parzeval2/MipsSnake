@@ -23,6 +23,7 @@ screenWidth: 	.word 64
 screenHeight: 	.word 64
 
 #Colors
+snakeColor: 	.word	0x00FF00	 # green ; SMALL CHANGE
 backgroundColor:.word	0x000000	 # black
 borderColor:    .word	0x00ff00	 # green	
 fruitColor: 	.word	0xcc6611	 # orange
