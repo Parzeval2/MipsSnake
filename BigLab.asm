@@ -28,6 +28,9 @@ backgroundColor:.word	0x000000	 # black
 borderColor:    .word	0xFFFF00	 # yellow ; SMALL CHANGE	
 fruitColor: 	.word	0xcc6611	 # orange
 
+extraLengthColor: .word 0xFF00FF   # magenta (or any color you want)
+
+
 #score variable
 score: 		.word 0
 #stores how many points are recieved for eating a fruit
@@ -278,9 +281,18 @@ SpawnFruit:
 
     #generate a random nnumber fom 0-2 for our generation
     li   $v0, 42
-    li   $a1, 3         # upper bound = 3
+    li   $a1, 4         # upper bound = 3
     syscall
     sw   $a0, fruitType
+
+# DEBUG: print fruitType
+    li   $v0, 1         # print_int syscall
+    move $a0, $a0
+    syscall
+
+    li   $v0, 11        # print_char syscall
+    li   $a0, 10        # newline
+    syscall
 
     jal  IncreaseDifficulty
 ######################################################
@@ -431,15 +443,28 @@ UpdateTailPosition:
 MoveTailUp:
 	#get the screen coordinates of the next direction change
 	lw $t8, locationInArray
-	la $t0, directionChangeAddressArray #get direction change coordinate
+	la $t0, directionChangeAddressArray
 	add $t0, $t0, $t8
 	lw $t9, 0($t0)
-	lw $a0, snakeTailX  #get snake tail position
+
+	lw $a0, snakeTailX
 	lw $a1, snakeTailY
-	#if the index is out of bounds, set back to zero
-	beq $s1, 1, IncreaseLengthUp #branch if length should be increased
-	addiu $a1, $a1, -1 #change tail position if no length change
+
+	# if we are growing, skip movement
+	bgtz $s1, SkipTailMoveUp
+
+	# no growth ? move tail upward
+	addiu $a1, $a1, -1
 	sw $a1, snakeTailY
+	j ContinueTailUp
+
+SkipTailMoveUp:
+	addiu $s1, $s1, -1
+	j ContinueTailUp
+
+ContinueTailUp:
+	# (do NOT overwrite snakeTailY again here — already done above if needed)
+
 	
 IncreaseLengthUp:
 	li $s1, 0 #set flag back to false
@@ -472,16 +497,27 @@ DrawTailUp:
 	j DrawFruit  #finished updating snake, update fruit
 
 MoveTailDown:
-	#get the screen coordinates of the next direction change
 	lw $t8, locationInArray
-	la $t0, directionChangeAddressArray #get direction change coordinate
+	la $t0, directionChangeAddressArray
 	add $t0, $t0, $t8
 	lw $t9, 0($t0)
-	lw $a0, snakeTailX  #get snake tail position
+
+	lw $a0, snakeTailX
 	lw $a1, snakeTailY
-	beq $s1, 1, IncreaseLengthDown #branch if length should be increased
-	addiu $a1, $a1, 1 #change tail position if no length change
+
+	bgtz $s1, SkipTailMoveDown
+
+	addiu $a1, $a1, 1
 	sw $a1, snakeTailY
+	j ContinueTailDown
+
+SkipTailMoveDown:
+	addiu $s1, $s1, -1
+	j ContinueTailDown
+
+ContinueTailDown:
+
+
 	
 IncreaseLengthDown:
 	li $s1, 0 #set flag back to false
@@ -514,16 +550,27 @@ DrawTailDown:
 	j DrawFruit #finished updating snake, update fruit
 
 MoveTailLeft:
-	#update the tail position when moving left
 	lw $t8, locationInArray
-	la $t0, directionChangeAddressArray #get direction change coordinate
+	la $t0, directionChangeAddressArray
 	add $t0, $t0, $t8
 	lw $t9, 0($t0)
-	lw $a0, snakeTailX #get snake tail position
+
+	lw $a0, snakeTailX
 	lw $a1, snakeTailY
-	beq $s1, 1, IncreaseLengthLeft #branch if length should be increased
-	addiu $a0, $a0, -1 #change tail position if no length change
+
+	bgtz $s1, SkipTailMoveLeft
+
+	addiu $a0, $a0, -1
 	sw $a0, snakeTailX
+	j ContinueTailLeft
+
+SkipTailMoveLeft:
+	addiu $s1, $s1, -1
+	j ContinueTailLeft
+
+ContinueTailLeft:
+
+
 	
 IncreaseLengthLeft:
 	li $s1, 0 #set flag back to false
@@ -556,24 +603,27 @@ DrawTailLeft:
 	j DrawFruit  #finished updating snake, update fruit
 
 MoveTailRight:
-	#get the screen coordinates of the next direction change
 	lw $t8, locationInArray
-	#get the base address of the coordinate array
 	la $t0, directionChangeAddressArray
-	#go to the correct index of array
 	add $t0, $t0, $t8
-	#get the data from the array
 	lw $t9, 0($t0)
-	#get current tail position
+
 	lw $a0, snakeTailX
 	lw $a1, snakeTailY
-	#if the length needs to be increased
-	#do not change coordinates
-	beq $s1, 1, IncreaseLengthRight
-	#change tail position
+
+	bgtz $s1, SkipTailMoveRight
+
 	addiu $a0, $a0, 1
-	#store new tail position
 	sw $a0, snakeTailX
+	j ContinueTailRight
+
+SkipTailMoveRight:
+	addiu $s1, $s1, -1
+	j ContinueTailRight
+
+ContinueTailRight:
+
+
 	
 IncreaseLengthRight:
 	li $s1, 0 #set flag back to false
@@ -636,6 +686,7 @@ DrawFruit:
     li   $a1, 0xCC6611  # default (type 0)
     beq  $t0, 1, LoadRed
     beq  $t0, 2, LoadBlue
+    beq $t0, 3, LoadMagenta
     j    DoDraw
 
 LoadRed:
@@ -644,23 +695,16 @@ LoadRed:
 
 LoadBlue:
     li   $a1, 0x0000FF
+    j DoDraw
+    
+LoadMagenta:
+    li   $a1, 0xFF00FF      # magenta for +3 length
+    j    DoDraw
+
 
 DoDraw:
     #draw the pixel
     jal  DrawPixel
-	# play sound to signify score update
-	li $v0, 31
-	li $a0, 76
-	li $a1, 120
-	li $a2, 7
-	li $a3, 128
-	syscall	
-
-	li $a0, 96
-	li $a1, 250
-	li $a2, 7
-	li $a3, 127
-	syscall
 
     # back to main loop
     j    InputCheck
@@ -669,7 +713,12 @@ AddLength:
     lw   $t0, fruitType #fruitType is randomly generated
     beq  $t0, 1, ShrinkFruit#check
     beq  $t0, 2, SpeedFruit#check
+    beq $t0, 3, GrowThree
     li   $s1, 1        # grow default
+    j    SpawnFruit
+
+GrowThree:
+    li   $s1, 3        # grow by 3 steps
     j    SpawnFruit
 
 ShrinkFruit:
@@ -1073,20 +1122,6 @@ IncreaseDifficulty:
 	addiu $t1, $t1, -25
 	#store new speed
 	sw $t1, gameSpeed
-	
-	#noiseeeee
-	li $v0, 31
-	li $a0, 79
-	li $a1, 150
-	li $a2, 7
-	li $a3, 127
-	syscall	
-
-	li $a0, 96
-	li $a1, 250
-	li $a2, 7
-	li $a3, 127
-	syscall
 
 FinishedDiff:
 	jr $ra
